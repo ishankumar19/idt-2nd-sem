@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LIGHT 🤖 Adaptive Quiz</title>
+    <style>
+        body {
+            background: #0b1a2b;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .chat-container {
+            width: 420px;
+            height: 650px;
+            background: #0f2235;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 15px;
+            background: #132c44;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .chat-box {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            padding: 12px 15px;
+            border-radius: 12px;
+            max-width: 92%;
+        }
+
+        .user { background: #2b6cff; color: white; align-self: flex-end; }
+        .bot  { background: #1e2f44; color: white; align-self: flex-start; }
+
+        .input-area {
+            display: flex;
+            padding: 10px;
+            background: #132c44;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            outline: none;
+            border-radius: 8px 0 0 8px;
+            background: #1e2f44;
+            color: white;
+        }
+
+        button {
+            padding: 12px 20px;
+            background: #22c55e;
+            border: none;
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 0 8px 8px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">LIGHT 🤖 Adaptive Quiz</div>
+    <div class="chat-box" id="chat-box"></div>
+
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Type weak topics (e.g. Thermodynamics, Fluid Mechanics)">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+let currentQuestions = [];
+let quizActive = false;
+
+function addMessage(text, className) {
+    const chatBox = document.getElementById("chat-box");
+    const msg = document.createElement("div");
+    msg.className = `message ${className}`;
+    msg.innerHTML = text;
+    chatBox.appendChild(msg);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function sendMessage() {
+    const input = document.getElementById("user-input");
+    let message = input.value.trim();
+    if (!message) return;
+
+    addMessage(message, "user");
+    input.value = "";
+
+    if (quizActive) {
+        addMessage("Please finish the current quiz first by clicking 'Submit Answers'.", "bot");
+        return;
+    }
+
+    if (message.toLowerCase() === "hello" || message.length < 5) {
+        addMessage("Hello! Please enter your weak topics separated by commas (e.g. Thermodynamics, Fluid Mechanics, Calculus) to generate a quiz.", "bot");
+        return;
+    }
+
+    quizActive = true;
+    addMessage("Generating 10 adaptive MCQs for you...", "bot");
+
+    try {
+        const res = await fetch('/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                weak_topics: message.split(",").map(t => t.trim()).filter(t => t),
+                strong_topics: [],
+                q_count: 10
+            })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to generate quiz");
+
+        currentQuestions = data.questions || [];
+        
+        if (currentQuestions.length === 0) {
+            addMessage("No questions generated. Please try different topics.", "bot");
+            quizActive = false;
+            return;
+        }
+
+        displayQuiz();
+
+    } catch (err) {
+        addMessage("Error: " + err.message, "bot");
+        quizActive = false;
+    }
+}
+
+function displayQuiz() {
+    let html = `<strong>Answer the questions and click Submit:</strong><br><br>`;
+
+    currentQuestions.forEach((q, i) => {
+        html += `<strong>Q${i+1}: ${q.question}</strong><br>`;
+        q.options.forEach((opt, j) => {
+            html += `
+                <label style="display:block; margin:8px 0; cursor:pointer;">
+                    <input type="radio" name="q${i}" value="${j}">
+                    ${opt}
+                </label>`;
+        });
+        html += `<br>`;
+    });
+
+    html += `<button onclick="submitQuiz()" style="padding:12px 25px; background:#22c55e; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Submit All Answers</button>`;
+
+    addMessage(html, "bot");
+}
+
+function submitQuiz() {
+    let score = 0;
+    let review = "";
+
+    currentQuestions.forEach((q, i) => {
+        const radios = document.getElementsByName(`q${i}`);
+        let userIndex = -1;
+
+        for (let radio of radios) {
+            if (radio.checked) {
+                userIndex = parseInt(radio.value);
+                break;
+            }
+        }
+
+        const isCorrect = (userIndex === parseInt(q.answer_index));
+
+        if (isCorrect) score++;
+
+        const userLetter = userIndex >= 0 ? String.fromCharCode(65 + userIndex) : "Not answered";
+        const correctLetter = String.fromCharCode(65 + parseInt(q.answer_index));
+
+        review += `
+            <strong>Q${i+1}:</strong> ${q.question}<br>
+            Your Answer: ${userLetter} ${isCorrect ? '✅' : '❌'}<br>
+            Correct Answer: ${correctLetter}<br>
+            Explanation: ${q.explanation}<br><br>`;
+    });
+
+    const percentage = Math.round((score / currentQuestions.length) * 100);
+
+    let finalReview = `<span style="font-size:1.6em; color:#22c55e;">${score}/${currentQuestions.length} (${percentage}%)</span><br><br>`;
+
+    if (percentage >= 80) finalReview += "🎉 Excellent Performance!<br><br>";
+    else if (percentage >= 60) finalReview += "👍 Good Job!<br><br>";
+    else finalReview += "💪 Keep Practicing!<br><br>";
+
+    finalReview += review;
+
+    addMessage(finalReview, "bot");
+    addMessage("Type new weak topics below to generate another quiz.", "bot");
+
+    quizActive = false;
+}
+
+document.getElementById("user-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") sendMessage();
+});
+
+window.onload = () => {
+    addMessage("Hello! Enter your weak topics (comma separated) and I'll create an adaptive quiz for you.", "bot");
+};
+</script>
+
+</body>
+</html>
