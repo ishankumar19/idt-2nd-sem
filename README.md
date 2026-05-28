@@ -80,6 +80,6 @@ light-quiz/
 
 | Variable | Description |
 |---|---|
-| `GEMINI_API_KEY` | Your Google Gemini API key |
+| `GEMINI_API_KEY` | Your API key |
 
 ---
